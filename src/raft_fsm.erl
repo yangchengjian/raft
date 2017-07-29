@@ -1,19 +1,10 @@
-%%%-------------------------------------------------------------------
-%%% @author kantappa
-%%% @copyright (C) 2017, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 28. 三月 2017 下午2:40
-%%%-------------------------------------------------------------------
 -module(raft_fsm).
--author("kantappa").
 
 -behaviour(gen_fsm).
 
 -include("raft.hrl").
 
--define(HEARTBEAT_TIMEOUT, 50).
+-define(HEARTBEAT_TIMEOUT, 100).
 -define(ELECTION_TIMEOUT_MIN, ?HEARTBEAT_TIMEOUT * 2).
 -define(ELECTION_TIMEOUT_MAX, ?HEARTBEAT_TIMEOUT * 3).
 
@@ -39,13 +30,6 @@
 
 -define(SERVER, ?MODULE).
 
-%%@doc
-%% state字段说明
-%% term 任期号
-%% votedFor 选票拥有者
-%% votelist 选票列表
-%% timer    定时器引用
-%%@end
 -record(state, {term = 0, votedFor, votelist = [], timer}).
 
 
@@ -84,9 +68,7 @@ init([]) ->
 wait(_, State) ->
     {next_state, wait, State}.
 
-%% 追随者
 follower(timeout, State) ->
-%%  进入该函数说明没有领导者，自己将成为候选人请求投票
     send_request_vote(State),
     {next_state, candidate, election_timer(State#state{votedFor = undefined, votelist = []})};
 follower(#request_vote{node = Node, term = Term}, #state{votedFor = undefined, term = Myterm} = State) when Term >= Myterm ->
@@ -106,7 +88,6 @@ follower(_Event, _From, State) ->
     Reply = ok,
     {reply, Reply, follower, State}.
 
-%% 候选人
 candidate(timeout, State) ->
     candidate_maybe_become_leader(cluster_node(State), State#state{votedFor = undefined, votelist = []});
 candidate(#request_vote{} = RequestVote, State) ->
@@ -124,9 +105,7 @@ candidate(_Event, _From, State) ->
     Reply = ok,
     {reply, Reply, candidate, State}.
 
-%% 管理者
 leader(timeout, State) ->
-%%  发送心跳数据
     send_heartbeat(State),
     NewState = heartbeat_timer(State#state{votedFor = undefined}),
     {next_state, leader, NewState};
@@ -175,8 +154,6 @@ terminate(_Reason, _StateName, _State) ->
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
-
-%% 选举定时期
 election_timer() ->
     gen_fsm:send_event_after(election_timeout(), timeout).
 
@@ -184,12 +161,10 @@ election_timer(State) ->
         catch gen_fsm:cancel_timer(State#state.timer),
     State#state{timer = gen_fsm:send_event_after(election_timeout(), timeout)}.
 
-%% 心跳定时期
 heartbeat_timer(State) ->
         catch gen_fsm:cancel_timer(State#state.timer),
     State#state{timer = gen_fsm:send_event_after(?HEARTBEAT_TIMEOUT, timeout)}.
 
-%% 随机生成term
 election_timeout() ->
     crypto:rand_uniform(?ELECTION_TIMEOUT_MIN, ?ELECTION_TIMEOUT_MAX).
 
@@ -203,13 +178,12 @@ candidate_maybe_become_follower(#heartbeat{term = Term}, #state{term = Myterm} =
 candidate_maybe_become_follower(#heartbeat{}, State) ->
     {next_state, candidate, State}.
 
-%% 单节点(单节点默认为leader)
 candidate_maybe_become_leader([], #state{term = Term} = State) ->
     NewState = State#state{term = Term + 1, votelist = []},
     send_heartbeat(NewState),
     raft_event:become(leader),
     {next_state, leader, heartbeat_timer(NewState)};
-%% 多节点集群
+
 candidate_maybe_become_leader([_node | _], State) ->
     NewState = election_timer(State),
     send_request_vote(NewState),
@@ -218,7 +192,6 @@ candidate_maybe_become_leader(#vote{node = Node}, #state{term = Term, votelist =
     NewVotelist = [Node | lists:delete(Node, Votelist)],
     Len = erlang:length(NewVotelist),
     ClusterNodeLen = erlang:length(cluster_node(State)),
-%%  获取到大多数选票就成为leader
     case Len == erlang:trunc(ClusterNodeLen / 2) + 1 of
         true ->
             NewState = State#state{votelist = [], term = Term + 1, votedFor = undefined},

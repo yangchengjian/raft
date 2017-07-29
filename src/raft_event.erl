@@ -1,13 +1,4 @@
-%%%-------------------------------------------------------------------
-%%% @author kantappa
-%%% @copyright (C) 2017, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 29. 三月 2017 上午10:59
-%%%-------------------------------------------------------------------
 -module(raft_event).
--author("kantappa").
 
 -behaviour(gen_event).
 
@@ -94,7 +85,6 @@ init([]) ->
     Handler2 :: (atom() | {atom(), Id :: term()}), Args2 :: term()} |
   remove_handler).
 
-%% 当前角色和之前的角色一样
 handle_event({change_role, Role}, #state{current_role = Role} = State) ->
   {ok, State};
 handle_event({change_role, Role}, #state{pidlist = []} = State) ->
